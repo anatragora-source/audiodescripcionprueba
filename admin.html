@@ -437,25 +437,22 @@
 //  CONFIGURACIÓN — MISMOS DATOS QUE EN oyente.html
 // ============================================================
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyCmECNuGS-ecCJBHfiLClpLApbIn_-5R-o",
-  authDomain: "audiodescripcion-prueba.firebaseapp.com",
-  databaseURL: "https://audiodescripcion-prueba-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "audiodescripcion-prueba",
-  storageBucket: "audiodescripcion-prueba.firebasestorage.app",
-  messagingSenderId: "822251179369",
-  appId: "1:822251179369:web:476dda44a85a65a31601f8"
+  apiKey:            "TU_API_KEY",
+  authDomain:        "TU_PROYECTO.firebaseapp.com",
+  databaseURL:       "https://TU_PROYECTO-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:         "TU_PROYECTO",
+  storageBucket:     "TU_PROYECTO.appspot.com",
+  messagingSenderId: "TU_SENDER_ID",
+  appId:             "TU_APP_ID"
 };
 // ============================================================
 
 let db, sessionRef;
-let audioBuffer = null;
-let audioBlob = null;
-let audioBlobUrl = null;
-let localAudio = new Audio();
+// El admin NO necesita el archivo de audio — solo lleva la cuenta del tiempo
 let playing = false;
-let playStartTimestamp = 0;
-let playOffset = 0;
-let progressInterval = null;
+let playOffset = 0;       // segundos acumulados antes del último play
+let playWallClock = null; // Date.now() en el momento del último play
+let timerInterval = null;
 
 // --- Firebase init ---
 function initFirebase() {
@@ -483,51 +480,39 @@ function initFirebase() {
   }
 }
 
-// --- Audio ---
-function loadAudio(file) {
-  if (!file) return;
-  if (audioBlobUrl) URL.revokeObjectURL(audioBlobUrl);
-  audioBlobUrl = URL.createObjectURL(file);
-  audioBlob = file;
-  localAudio.src = audioBlobUrl;
-  localAudio.load();
-  document.getElementById('file-name').textContent = file.name;
-  document.getElementById('drop-zone').style.display = 'none';
-  document.getElementById('file-loaded').style.display = 'flex';
-  log('Archivo cargado: ' + file.name, 'ok');
-  startLocalProgress();
-}
-
-function removeAudio() {
-  localAudio.pause();
-  if (audioBlobUrl) URL.revokeObjectURL(audioBlobUrl);
-  audioBlobUrl = null; audioBlob = null;
-  localAudio.src = '';
-  document.getElementById('drop-zone').style.display = 'block';
-  document.getElementById('file-loaded').style.display = 'none';
-  log('Archivo eliminado', 'warn');
-}
-
-// Drag & drop
-const dz = document.getElementById('drop-zone');
-dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
-dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
-dz.addEventListener('drop', e => {
-  e.preventDefault();
-  dz.classList.remove('drag-over');
-  const f = e.dataTransfer.files[0];
-  if (f && f.type.startsWith('audio/')) loadAudio(f);
+// El admin ya no usa carga de archivo — ocultamos esa sección
+window.addEventListener('load', () => {
+  const fileCard = document.querySelector('.card');
+  if (fileCard) fileCard.style.display = 'none';
+  initFirebase();
+  const hint = window.location.href.replace('admin.html', 'oyente.html');
+  document.getElementById('oyente-url').value = hint;
+  updateQR(hint);
 });
+
+// --- Cronómetro interno (el admin no tiene el audio, usa tiempo de pared) ---
+function getCurrentOffset() {
+  if (!playing) return playOffset;
+  return playOffset + (Date.now() - playWallClock) / 1000;
+}
+
+function startTimer() {
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    const cur = getCurrentOffset();
+    document.getElementById('time-current').textContent = fmtTime(cur);
+  }, 500);
+}
+
+function stopTimer() {
+  if (timerInterval) clearInterval(timerInterval);
+}
 
 // --- Controls ---
 function doPlay() {
-  if (!audioBlobUrl) { showToast('⚠️ Carga primero el archivo de audio'); return; }
-  const offset = localAudio.paused ? playOffset : localAudio.currentTime;
+  const offset = getCurrentOffset();
   playOffset = offset;
-  playStartTimestamp = Date.now();
-
-  localAudio.currentTime = offset;
-  localAudio.play();
+  playWallClock = Date.now();
   playing = true;
 
   const trackName = document.getElementById('track-name').value || 'Audiodescripción';
@@ -536,36 +521,36 @@ function doPlay() {
     command: 'play',
     timestamp: firebase.database.ServerValue.TIMESTAMP,
     offset: offset,
-    audioUrl: null,  // el audio se sirve localmente en oyente.html
     trackName: trackName,
     updatedAt: Date.now()
   });
+
+  startTimer();
 
   document.getElementById('btn-play').innerHTML = `
     <svg viewBox="0 0 24 24" fill="none" stroke="#0a0a0f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><polygon points="5 3 19 12 5 21 5 3"/></svg>
     Reproduciendo…`;
 
-  log('▶ Play enviado a todos los oyentes (offset: ' + fmtTime(offset) + ')', 'ok');
+  log('▶ Play enviado (offset: ' + fmtTime(offset) + ')', 'ok');
   showToast('▶ Play enviado a todos');
 }
 
 function doPause() {
-  playOffset = localAudio.currentTime;
-  localAudio.pause();
+  playOffset = getCurrentOffset();
   playing = false;
+  stopTimer();
   sessionRef.set({ command: 'pause', updatedAt: Date.now() });
   document.getElementById('btn-play').innerHTML = `
     <svg viewBox="0 0 24 24" fill="none" stroke="#0a0a0f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><polygon points="5 3 19 12 5 21 5 3"/></svg>
     Dar play a todos`;
-  log('⏸ Pausa enviada', 'warn');
+  log('⏸ Pausa enviada (en ' + fmtTime(playOffset) + ')', 'warn');
   showToast('⏸ Pausa enviada');
 }
 
 function doStop() {
-  localAudio.pause();
-  localAudio.currentTime = 0;
   playOffset = 0;
   playing = false;
+  stopTimer();
   sessionRef.set({ command: 'stop', updatedAt: Date.now() });
   document.getElementById('btn-play').innerHTML = `
     <svg viewBox="0 0 24 24" fill="none" stroke="#0a0a0f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -578,21 +563,10 @@ function doStop() {
 
 // --- Progress ---
 function fmtTime(s) {
-  if (!s || isNaN(s)) return '--:--';
+  if (!s || isNaN(s)) return '0:00';
   const m = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
   return m + ':' + String(sec).padStart(2, '0');
-}
-
-function startLocalProgress() {
-  if (progressInterval) clearInterval(progressInterval);
-  progressInterval = setInterval(() => {
-    const cur = localAudio.currentTime;
-    const dur = localAudio.duration;
-    document.getElementById('time-current').textContent = fmtTime(cur);
-    document.getElementById('time-total').textContent = fmtTime(dur);
-    if (dur) document.getElementById('progress-fill').style.width = (cur / dur * 100) + '%';
-  }, 500);
 }
 
 // --- QR ---
@@ -608,13 +582,7 @@ function updateQR(url) {
   img.src = qrApiUrl;
 }
 
-// Populate QR with current page URL as default hint
-window.addEventListener('load', () => {
-  const hint = window.location.href.replace('admin.html', 'oyente.html');
-  document.getElementById('oyente-url').value = hint;
-  updateQR(hint);
-  initFirebase();
-});
+// (init ya está en el window.addEventListener('load') de arriba)
 
 function copyUrl() {
   const url = document.getElementById('oyente-url').value;

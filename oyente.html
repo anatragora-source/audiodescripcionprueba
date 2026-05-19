@@ -418,26 +418,30 @@
 //  CONFIGURACIÓN — PEGA AQUÍ TUS DATOS DE FIREBASE
 // ============================================================
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyCmECNuGS-ecCJBHfiLClpLApbIn_-5R-o",
-  authDomain: "audiodescripcion-prueba.firebaseapp.com",
-  databaseURL: "https://audiodescripcion-prueba-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "audiodescripcion-prueba",
-  storageBucket: "audiodescripcion-prueba.firebasestorage.app",
-  messagingSenderId: "822251179369",
-  appId: "1:822251179369:web:476dda44a85a65a31601f8"
+  apiKey:            "TU_API_KEY",
+  authDomain:        "TU_PROYECTO.firebaseapp.com",
+  databaseURL:       "https://TU_PROYECTO-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:         "TU_PROYECTO",
+  storageBucket:     "TU_PROYECTO.appspot.com",
+  messagingSenderId: "TU_SENDER_ID",
+  appId:             "TU_APP_ID"
 };
 
-// URL de tu archivo de audiodescripción (puede ser relativa o CDN)
+// ============================================================
+//  CAMBIA ESTO: pon la URL pública de tu MP3 en GitHub Pages
+//  Ejemplo: "https://tuusuario.github.io/audiodescripcion/nombre.mp3"
+// ============================================================
 const AUDIO_URL = "ES_F_Marina_Audiodescription.mp3";
 
 // Nombre de la pista (aparece en el reproductor)
 const TRACK_NAME = "Audiodescripción";
 // ============================================================
 
-const audio = new Audio(AUDIO_URL);
+const audio = new Audio();
 audio.preload = "auto";
 
-let firebaseReady = false;
+let audioUnlocked = false;
+let pendingPlay = null; // guarda datos de play si llegan antes de que el usuario toque
 let sessionRef = null;
 
 function showScreen(id) {
@@ -451,10 +455,31 @@ function showError(msg) {
 }
 
 function activateAudio() {
-  // El toque del usuario desbloquea autoplay en iOS/Android
-  audio.volume = 1;
-  audio.load();
   document.getElementById('track-title').textContent = TRACK_NAME;
+
+  // Paso clave: reproducir y pausar inmediatamente para desbloquear autoplay en iOS/Android
+  audio.src = AUDIO_URL;
+  audio.volume = 1;
+  const unlockPromise = audio.play();
+  if (unlockPromise) {
+    unlockPromise.then(() => {
+      audio.pause();
+      audio.currentTime = 0;
+      audioUnlocked = true;
+      // Si ya llegó una señal de play mientras esperábamos, la ejecutamos ahora
+      if (pendingPlay) {
+        const p = pendingPlay;
+        pendingPlay = null;
+        handlePlay(p.timestamp, p.offset);
+      }
+    }).catch(() => {
+      // Si incluso esto falla (muy raro), marcamos igual como desbloqueado
+      audioUnlocked = true;
+    });
+  } else {
+    audioUnlocked = true;
+  }
+
   showScreen('screen-waiting');
   initFirebase();
 }
@@ -470,7 +495,12 @@ function initFirebase() {
       if (!data) return;
 
       if (data.command === 'play' && data.timestamp) {
-        handlePlay(data.timestamp, data.offset || 0, data.audioUrl);
+        if (!audioUnlocked) {
+          // Guardamos la señal para ejecutarla en cuanto el audio esté desbloqueado
+          pendingPlay = { timestamp: data.timestamp, offset: data.offset || 0 };
+        } else {
+          handlePlay(data.timestamp, data.offset || 0);
+        }
       } else if (data.command === 'pause') {
         handlePause();
       } else if (data.command === 'stop') {
@@ -480,32 +510,43 @@ function initFirebase() {
       showError('Error de conexión con Firebase: ' + err.message);
     });
 
-    firebaseReady = true;
   } catch(e) {
     showError('Error al inicializar Firebase. Revisa la configuración.');
   }
 }
 
-function handlePlay(serverTimestamp, offset, audioUrl) {
-  if (audioUrl && audio.src !== audioUrl) {
-    audio.src = audioUrl;
-    audio.load();
-  }
-
+function handlePlay(serverTimestamp, offset) {
   const now = Date.now();
-  const elapsed = (now - serverTimestamp) / 1000 + offset;
+  const elapsed = (now - serverTimestamp) / 1000 + (offset || 0);
   const seekTo = Math.max(0, elapsed);
 
-  audio.currentTime = seekTo;
-  audio.play().then(() => {
-    showScreen('screen-playing');
-    startProgressUpdater();
-  }).catch(e => {
-    // Si autoplay falla, mostrar botón manual
-    showScreen('screen-playing');
-    document.getElementById('play-icon').style.display = 'block';
-    document.getElementById('pause-icon').style.display = 'none';
-  });
+  // Si el audio no tiene src aún (por si acaso), lo ponemos
+  if (!audio.src || audio.src === window.location.href) {
+    audio.src = AUDIO_URL;
+  }
+
+  const doPlay = () => {
+    audio.currentTime = seekTo;
+    audio.play().then(() => {
+      showScreen('screen-playing');
+      startProgressUpdater();
+      document.getElementById('play-icon').style.display = 'none';
+      document.getElementById('pause-icon').style.display = 'block';
+    }).catch(err => {
+      // Último recurso: mostrar reproductor manual
+      showScreen('screen-playing');
+      document.getElementById('play-icon').style.display = 'block';
+      document.getElementById('pause-icon').style.display = 'none';
+      startProgressUpdater();
+    });
+  };
+
+  // Si el audio aún está cargando, esperamos a que tenga suficientes datos
+  if (audio.readyState >= 2) {
+    doPlay();
+  } else {
+    audio.addEventListener('canplay', doPlay, { once: true });
+  }
 }
 
 function handlePause() {
