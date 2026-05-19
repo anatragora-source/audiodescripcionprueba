@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audiodescripción</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --border: rgba(255,255,255,0.08);
+    --accent: #c8a96e;
+    --accent-dim: rgba(200,169,110,0.15);
+    --accent-glow: rgba(200,169,110,0.08);
+    --text: #f0ede8;
+    --muted: rgba(240,237,232,0.45);
+    --danger: #e25c5c;
+    --success: #6ec88a;
+    --radius: 16px;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 300;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100dvh;
+    padding: 2rem 1.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Subtle ambient background */
+  body::before {
+    content: '';
+    position: fixed;
+    top: -30%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(ellipse, rgba(200,169,110,0.04) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .screen {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    width: 100%;
+    max-width: 400px;
+    gap: 2rem;
+    animation: fadeUp 0.5s ease both;
+  }
+  .screen.active { display: flex; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .icon-wrap {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  .icon-wrap svg {
+    width: 40px;
+    height: 40px;
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .pulse-ring {
+    position: absolute;
+    inset: -10px;
+    border-radius: 50%;
+    border: 1px solid var(--accent);
+    opacity: 0;
+    animation: pulse 2.5s ease-out infinite;
+  }
+  .pulse-ring:nth-child(2) { animation-delay: 0.8s; }
+
+  @keyframes pulse {
+    0%   { opacity: 0.4; transform: scale(1); }
+    100% { opacity: 0; transform: scale(1.35); }
+  }
+
+  h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(1.6rem, 5vw, 2rem);
+    font-weight: 400;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+  }
+
+  h1 em {
+    font-style: italic;
+    color: var(--accent);
+  }
+
+  p {
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.7;
+    max-width: 320px;
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--accent);
+    color: #0a0a0f;
+    border: none;
+    border-radius: 50px;
+    padding: 0.9rem 2rem;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.15s;
+    -webkit-appearance: none;
+    width: 100%;
+    justify-content: center;
+  }
+  .btn-primary:active { opacity: 0.85; transform: scale(0.98); }
+
+  .btn-primary svg {
+    width: 18px; height: 18px;
+    fill: none; stroke: #0a0a0f; stroke-width: 2;
+    stroke-linecap: round; stroke-linejoin: round;
+    flex-shrink: 0;
+  }
+
+  /* Waiting screen */
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: blink 1.4s ease-in-out infinite;
+    display: inline-block;
+    margin-right: 8px;
+  }
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.2; }
+  }
+
+  .status-label {
+    font-size: 0.8rem;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  /* Player screen */
+  .player-card {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .track-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .track-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.1rem;
+    font-weight: 400;
+  }
+  .track-sub {
+    font-size: 0.78rem;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .progress-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .progress-bar-bg {
+    height: 3px;
+    background: var(--border);
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 99px;
+    width: 0%;
+    transition: width 0.5s linear;
+  }
+
+  .time-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+  }
+
+  .ctrl-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+    padding: 8px;
+    border-radius: 50%;
+    transition: color 0.15s, background 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ctrl-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+  .ctrl-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+  .ctrl-btn.main-play {
+    width: 56px; height: 56px;
+    background: var(--accent);
+    color: #0a0a0f;
+    border-radius: 50%;
+  }
+  .ctrl-btn.main-play:hover { background: #d4b47a; }
+  .ctrl-btn.main-play svg { stroke: #0a0a0f; }
+
+  .volume-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .volume-row svg { width: 16px; height: 16px; fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-linecap: round; flex-shrink: 0; }
+
+  input[type=range].vol-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 3px;
+    background: var(--border);
+    border-radius: 99px;
+    outline: none;
+  }
+  input[type=range].vol-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+
+  .sync-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    color: var(--accent);
+    background: var(--accent-dim);
+    border: 1px solid rgba(200,169,110,0.2);
+    border-radius: 50px;
+    padding: 4px 12px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .sync-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: blink 1.4s ease-in-out infinite; }
+
+  /* Error / disconnected */
+  .err-icon svg { stroke: var(--danger); }
+  .err-title { color: var(--danger) !important; }
+
+  /* Footer */
+  footer {
+    position: fixed;
+    bottom: 1.5rem;
+    font-size: 0.7rem;
+    color: rgba(240,237,232,0.2);
+    letter-spacing: 0.05em;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<!-- PANTALLA 1: Activar audio -->
+<div class="screen active" id="screen-activate">
+  <div class="icon-wrap">
+    <div class="pulse-ring"></div>
+    <div class="pulse-ring"></div>
+    <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+  </div>
+  <div>
+    <h1>Bienvenido a la<br><em>audiodescripción</em></h1>
+  </div>
+  <p>Toca el botón para activar el audio en tu dispositivo y conectarte a la sesión. La reproducción comenzará automáticamente cuando el proyeccionista lo indique.</p>
+  <button class="btn-primary" id="btn-activate" onclick="activateAudio()">
+    <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+    Activar audio y unirme
+  </button>
+</div>
+
+<!-- PANTALLA 2: Esperando -->
+<div class="screen" id="screen-waiting">
+  <div class="icon-wrap">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+  </div>
+  <div>
+    <h1>Esperando<br><em>la señal</em></h1>
+  </div>
+  <p>Estás conectado y listo. La audiodescripción comenzará en cuanto el proyeccionista dé la orden. Mantén el volumen al máximo.</p>
+  <div>
+    <span class="status-dot"></span>
+    <span class="status-label">Conectado · en espera</span>
+  </div>
+</div>
+
+<!-- PANTALLA 3: Reproduciendo -->
+<div class="screen" id="screen-playing">
+  <div class="sync-badge">
+    <span class="dot"></span>
+    En directo · sincronizado
+  </div>
+  <div class="player-card">
+    <div class="track-info">
+      <div class="track-title" id="track-title">Audiodescripción</div>
+      <div class="track-sub">Sesión en curso</div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="progress-fill"></div>
+      </div>
+      <div class="time-row">
+        <span id="time-current">0:00</span>
+        <span id="time-total">--:--</span>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="ctrl-btn" onclick="seekBack()" aria-label="Retroceder 10 segundos">
+        <svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.55"/><text x="8" y="15" style="font-size:6px;fill:currentColor;stroke:none;font-family:sans-serif">10</text></svg>
+      </button>
+      <button class="ctrl-btn main-play" id="play-pause-btn" onclick="togglePlay()" aria-label="Pausar">
+        <svg id="play-icon" viewBox="0 0 24 24" style="display:none"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        <svg id="pause-icon" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+      </button>
+      <button class="ctrl-btn" onclick="seekFwd()" aria-label="Avanzar 10 segundos">
+        <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-4.55"/><text x="8" y="15" style="font-size:6px;fill:currentColor;stroke:none;font-family:sans-serif">10</text></svg>
+      </button>
+    </div>
+    <div class="volume-row">
+      <svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/></svg>
+      <input type="range" class="vol-slider" min="0" max="1" step="0.01" value="1" oninput="setVolume(this.value)" aria-label="Volumen">
+      <svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+    </div>
+  </div>
+</div>
+
+<!-- PANTALLA 4: Error -->
+<div class="screen" id="screen-error">
+  <div class="icon-wrap err-icon">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+  </div>
+  <div>
+    <h1 class="err-title">Sin conexión</h1>
+  </div>
+  <p id="error-msg">No se pudo conectar. Comprueba tu conexión WiFi e inténtalo de nuevo.</p>
+  <button class="btn-primary" onclick="location.reload()">
+    <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-4.55"/></svg>
+    Reintentar
+  </button>
+</div>
+
+<footer>Audiodescripción · Accesibilidad</footer>
+
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<script>
+// ============================================================
+//  CONFIGURACIÓN — PEGA AQUÍ TUS DATOS DE FIREBASE
+// ============================================================
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCmECNuGS-ecCJBHfiLClpLApbIn_-5R-o",
+  authDomain: "audiodescripcion-prueba.firebaseapp.com",
+  databaseURL: "https://audiodescripcion-prueba-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "audiodescripcion-prueba",
+  storageBucket: "audiodescripcion-prueba.firebasestorage.app",
+  messagingSenderId: "822251179369",
+  appId: "1:822251179369:web:476dda44a85a65a31601f8"
+};
+
+// URL de tu archivo de audiodescripción (puede ser relativa o CDN)
+const AUDIO_URL = "audiodescripcion.mp3";
+
+// Nombre de la pista (aparece en el reproductor)
+const TRACK_NAME = "Audiodescripción";
+// ============================================================
+
+const audio = new Audio(AUDIO_URL);
+audio.preload = "auto";
+
+let firebaseReady = false;
+let sessionRef = null;
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function showError(msg) {
+  if (msg) document.getElementById('error-msg').textContent = msg;
+  showScreen('screen-error');
+}
+
+function activateAudio() {
+  // El toque del usuario desbloquea autoplay en iOS/Android
+  audio.volume = 1;
+  audio.load();
+  document.getElementById('track-title').textContent = TRACK_NAME;
+  showScreen('screen-waiting');
+  initFirebase();
+}
+
+function initFirebase() {
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    const db = firebase.database();
+    sessionRef = db.ref('session');
+
+    sessionRef.on('value', snapshot => {
+      const data = snapshot.val();
+      if (!data) return;
+
+      if (data.command === 'play' && data.timestamp) {
+        handlePlay(data.timestamp, data.offset || 0, data.audioUrl);
+      } else if (data.command === 'pause') {
+        handlePause();
+      } else if (data.command === 'stop') {
+        handleStop();
+      }
+    }, err => {
+      showError('Error de conexión con Firebase: ' + err.message);
+    });
+
+    firebaseReady = true;
+  } catch(e) {
+    showError('Error al inicializar Firebase. Revisa la configuración.');
+  }
+}
+
+function handlePlay(serverTimestamp, offset, audioUrl) {
+  if (audioUrl && audio.src !== audioUrl) {
+    audio.src = audioUrl;
+    audio.load();
+  }
+
+  const now = Date.now();
+  const elapsed = (now - serverTimestamp) / 1000 + offset;
+  const seekTo = Math.max(0, elapsed);
+
+  audio.currentTime = seekTo;
+  audio.play().then(() => {
+    showScreen('screen-playing');
+    startProgressUpdater();
+  }).catch(e => {
+    // Si autoplay falla, mostrar botón manual
+    showScreen('screen-playing');
+    document.getElementById('play-icon').style.display = 'block';
+    document.getElementById('pause-icon').style.display = 'none';
+  });
+}
+
+function handlePause() {
+  audio.pause();
+  document.getElementById('play-icon').style.display = 'block';
+  document.getElementById('pause-icon').style.display = 'none';
+}
+
+function handleStop() {
+  audio.pause();
+  audio.currentTime = 0;
+  showScreen('screen-waiting');
+}
+
+function togglePlay() {
+  if (audio.paused) {
+    audio.play();
+    document.getElementById('play-icon').style.display = 'none';
+    document.getElementById('pause-icon').style.display = 'block';
+  } else {
+    audio.pause();
+    document.getElementById('play-icon').style.display = 'block';
+    document.getElementById('pause-icon').style.display = 'none';
+  }
+}
+
+function seekBack() { audio.currentTime = Math.max(0, audio.currentTime - 10); }
+function seekFwd()  { audio.currentTime = Math.min(audio.duration || Infinity, audio.currentTime + 10); }
+function setVolume(v) { audio.volume = parseFloat(v); }
+
+function fmtTime(s) {
+  if (!s || isNaN(s)) return '--:--';
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return m + ':' + String(sec).padStart(2, '0');
+}
+
+let progressInterval = null;
+function startProgressUpdater() {
+  if (progressInterval) clearInterval(progressInterval);
+  progressInterval = setInterval(() => {
+    const cur = audio.currentTime;
+    const dur = audio.duration;
+    document.getElementById('time-current').textContent = fmtTime(cur);
+    document.getElementById('time-total').textContent = fmtTime(dur);
+    if (dur) {
+      document.getElementById('progress-fill').style.width = (cur / dur * 100) + '%';
+    }
+  }, 500);
+}
+
+audio.addEventListener('ended', () => {
+  if (progressInterval) clearInterval(progressInterval);
+  document.getElementById('play-icon').style.display = 'block';
+  document.getElementById('pause-icon').style.display = 'none';
+});
+</script>
+</body>
+</html>
